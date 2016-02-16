@@ -92,7 +92,7 @@ HomeworkLight.prototype = {
         var info = new Service.AccessoryInformation();
         info.setCharacteristic(Characteristic.Manufacturer, "Homework");
         info.setCharacteristic(Characteristic.Model, this.name);
-        info.setCharacteristic(Characteristic.SerialNumber, this.address);
+        info.setCharacteristic(Characteristic.SerialNumber, this.device.uuid);
 
         var light = new Service.Lightbulb();
         light.getCharacteristic(Characteristic.On).on("set", this._setOn.bind(this));
