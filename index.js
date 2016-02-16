@@ -168,7 +168,6 @@ HWPlatform.prototype = {
             let id = ++this._id;
             req.id = id;
             // this.log("sending req", JSON.stringify(req));
-            this.ws.send(JSON.stringify(req));
             this.listener.on("response", (resp) => {
                 if ("id" in resp && "result" in resp && resp.id == id) {
                     resolve(resp.result);
@@ -177,6 +176,7 @@ HWPlatform.prototype = {
             this.listener.on("close", () => {
                 reject("connection closed");
             });
+            this.ws.send(JSON.stringify(req));
         });
         return p;
     }
