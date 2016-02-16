@@ -7,6 +7,8 @@ function HomeworkLight(dev, dimmable) {
     this.dimmable = dimmable;
     this.primary = dimmable ? dev.values["level"] : dev.values["value"];
     this.name = dev.name;
+    this.log = homework.log;
+    this._max = dimmable ? 99 : 1;
 
     homework.listener.on("valueUpdated", (val, dev) => {
         if (dev.uuid !== this.device.uuid)
@@ -20,21 +22,27 @@ HomeworkLight.prototype = {
     request: undefined,
 
     get raw() {
-        return parseInt(this.primary.raw);
+        switch (typeof this.primary.raw) {
+        case "string":
+            return parseInt(this.primary.raw);
+        case "boolean":
+            return this.primary.raw ? 1 : 0;
+        }
+        return this.primary.raw;
     },
 
     setValue: function(val)
     {
-        return homework.request({ type: "setValue", devuuid: this.device.uuid, valname: this.primary.name, val });
+        return homework.request({ type: "setValue", devuuid: this.device.uuid, valname: this.primary.name, value: val });
     },
 
     _getOn: function(callback) {
-        this.log("geton " + this.name);
+        this.log("geton", this.name);
         this.log(this.primary.value, this.raw);
         callback(null, this.raw > 0);
     },
     _setOn: function(on, callback) {
-        if (on && this.raw > 0) {
+        if (on && this.raw == this._max) {
             callback();
             return;
         }

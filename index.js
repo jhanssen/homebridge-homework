@@ -20,6 +20,7 @@ module.exports.platform = HWPlatform;
 function Listener()
 {
     EventEmitter.call(this);
+    this.setMaxListeners(1000);
 };
 
 util.inherits(Listener, EventEmitter);
@@ -66,10 +67,10 @@ HWPlatform.prototype = {
         for (var k in this._devices) {
             const dev = this._devices[k];
             switch (dev.type) {
-            case HWPlatform.Dimmer:
+            case HWPlatform.Types.Dimmer:
                 ret.push(new light.Device(dev, true));
                 break;
-            case HWPlatform.Light:
+            case HWPlatform.Types.Light:
                 ret.push(new light.Device(dev, false));
                 break;
             default:
@@ -83,12 +84,14 @@ HWPlatform.prototype = {
     reconnect: function reconnect() {
         this._ws = new WebSocket("ws://" + this._host + (this._port ? (":" + this._port) : "") + "/");
         this._ws.on("open", () => {
+            this.log("requesting devices");
             this.request({ type: "devices" }).then((response) => {
                 if (!(response instanceof Array))
                     return;
                 var devs = Object.create(null);
                 var rem = response.length;
                 var done = () => {
+                    this.log("got all devices");
                     this.updateDevices(devs);
                 };
                 for (var i = 0; i < response.length; ++i) {
@@ -96,7 +99,12 @@ HWPlatform.prototype = {
                     devs[uuid] = response[i];
                     devs[uuid].values = Object.create(null);
                     this.request({ type: "values", devuuid: uuid }).then((response) => {
-                        devs[uuid].values[response.name] = response;
+                        if (response instanceof Array) {
+                            for (var i = 0; i < response.length; ++i) {
+                                var val = response[i];
+                                devs[uuid].values[val.name] = val;
+                            }
+                        }
                         if (!--rem)
                             done();
                     });
@@ -148,6 +156,7 @@ HWPlatform.prototype = {
         }
     },
     accessories: function(cb) {
+        this.log("getting accessories", this._devices);
         if (this._devices !== undefined) {
             this.processDevices(cb);
         } else {
@@ -158,10 +167,11 @@ HWPlatform.prototype = {
         const p = new Promise((resolve, reject) => {
             let id = ++this._id;
             req.id = id;
+            // this.log("sending req", JSON.stringify(req));
             this.ws.send(JSON.stringify(req));
             this.listener.on("response", (resp) => {
-                if ("id" in resp && resp.id == id) {
-                    resolve(resp);
+                if ("id" in resp && "result" in resp && resp.id == id) {
+                    resolve(resp.result);
                 }
             });
             this.listener.on("close", () => {
