@@ -179,6 +179,8 @@ HWPlatform.prototype = {
                         resolve(resp.result);
                     } else if ("error" in resp) {
                         reject(resp.error);
+                    } else {
+                        reject("no result or error in response: " + JSON.stringify(resp));
                     }
                 }
             });
