@@ -2,6 +2,17 @@
 
 var homework, Service, Characteristic;
 
+function rawValue(val)
+{
+    switch (typeof val) {
+    case "string":
+        return parseInt(val);
+    case "boolean":
+        return val ? 1 : 0;
+    }
+    return val;
+}
+
 function HomeworkLight(dev, dimmable) {
     this.device = dev;
     this.dimmable = dimmable;
@@ -10,10 +21,17 @@ function HomeworkLight(dev, dimmable) {
     this.log = homework.log;
     this._max = dimmable ? 99 : 1;
 
-    homework.listener.on("valueUpdated", (val, dev) => {
+    homework.listener.on("valueUpdated", (val, old, dev) => {
         if (dev.uuid !== this.device.uuid)
             return;
-        // blah
+        if ((rawValue(old.raw) > 0) !== (this.raw > 0)) {
+            this.lightService.setCharacteristic(Characteristic.On, this.raw > 0);
+        }
+        if (this.dimmable) {
+            if (rawValue(old.raw) !== this.raw) {
+                this.lightService.setCharacteristic(Characteristic.Brightness, this.raw);
+            }
+        }
     });
 }
 
@@ -22,13 +40,7 @@ HomeworkLight.prototype = {
     request: undefined,
 
     get raw() {
-        switch (typeof this.primary.raw) {
-        case "string":
-            return parseInt(this.primary.raw);
-        case "boolean":
-            return this.primary.raw ? 1 : 0;
-        }
-        return this.primary.raw;
+        return rawValue(this.primary.raw);
     },
 
     setValue: function(val)
@@ -37,8 +49,8 @@ HomeworkLight.prototype = {
     },
 
     _getOn: function(callback) {
-        this.log("geton", this.name);
-        this.log(this.primary.value, this.raw);
+        // this.log("geton", this.name);
+        // this.log(this.primary.value, this.raw);
         callback(null, this.raw > 0);
     },
     _setOn: function(on, callback) {
@@ -50,14 +62,14 @@ HomeworkLight.prototype = {
             callback();
             return;
         }
-        this.log("seton " + on + " " + this.name);
+        // this.log("seton " + on + " " + this.name);
         this.setValue(on ? "on" : "off").then(() => {
             callback();
         });
     },
     _getDim: function(callback) {
-        this.log("getdim " + this.name);
-        this.log(this.raw);
+        // this.log("getdim " + this.name);
+        // this.log(this.raw);
         callback(null, this.raw);
     },
     _setDim: function(level, callback) {
@@ -68,7 +80,7 @@ HomeworkLight.prototype = {
             callback();
             return;
         }
-        this.log("setdim " + val + " " + this.name);
+        // this.log("setdim " + val + " " + this.name);
         this.setValue(val).then(() => {
             callback();
         });

@@ -127,15 +127,20 @@ HWPlatform.prototype = {
             if (typeof obj === "object") {
                 // value update
                 if ("valueUpdated" in obj) {
-                    if (obj.devuuid in this._devices) {
-                        const dev = this._devices[obj.devuuid];
-                        if (obj.valname in dev) {
-                            const val = dev[obj.valname];
-                            val.value = obj.value;
-                            val.raw = obj.raw;
-                            this._listener.emit("valueUpdated", val, dev);
+                    const updated = obj.valueUpdated;
+                    if (updated.devuuid in this._devices) {
+                        const dev = this._devices[updated.devuuid];
+                        if (updated.valname in dev.values) {
+                            const val = dev.values[updated.valname];
+                            const old = {
+                                value: val.value,
+                                raw: val.raw
+                            };
+                            val.value = updated.value;
+                            val.raw = updated.raw;
+                            this._listener.emit("valueUpdated", val, old, dev);
                         } else {
-                            this.log("value updated but value not known", obj.devuuid, obj.valname);
+                            this.log("value updated but value not known", updated.devuuid, updated.valname);
                         }
                     }
                 } else if ("id" in obj) {
