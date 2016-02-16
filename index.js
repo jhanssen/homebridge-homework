@@ -174,8 +174,12 @@ HWPlatform.prototype = {
             req.id = id;
             // this.log("sending req", JSON.stringify(req));
             this.listener.on("response", (resp) => {
-                if ("id" in resp && "result" in resp && resp.id == id) {
-                    resolve(resp.result);
+                if ("id" in resp && resp.id == id) {
+                    if ("result" in resp) {
+                        resolve(resp.result);
+                    } else if ("error" in resp) {
+                        reject(resp.error);
+                    }
                 }
             });
             this.listener.on("close", () => {
