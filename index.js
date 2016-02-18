@@ -1,4 +1,4 @@
-/*global require,module*/
+/*global require,module,process,setTimeout*/
 "use strict";
 
 const WebSocket = require("ws");
@@ -82,76 +82,94 @@ HWPlatform.prototype = {
     },
 
     reconnect: function reconnect() {
-        this._ws = new WebSocket("ws://" + this._host + (this._port ? (":" + this._port) : "") + "/");
-        this._ws.on("open", () => {
-            this.log("requesting devices");
-            this.request({ type: "devices" }).then((response) => {
-                if (!(response instanceof Array))
+        var connect = () => {
+            this._ws = new WebSocket("ws://" + this._host + (this._port ? (":" + this._port) : "") + "/");
+            this._ws.on("open", () => {
+                this._clearConnectionState();
+                this.log("requesting devices");
+                this.request({ type: "devices" }).then((response) => {
+                    if (!(response instanceof Array))
+                        return;
+                    var devs = Object.create(null);
+                    var rem = response.length;
+                    var done = () => {
+                        this.log("got all devices");
+                        this.updateDevices(devs);
+                    };
+                    for (var i = 0; i < response.length; ++i) {
+                        let uuid = response[i].uuid;
+                        devs[uuid] = response[i];
+                        devs[uuid].values = Object.create(null);
+                        this.request({ type: "values", devuuid: uuid }).then((response) => {
+                            if (response instanceof Array) {
+                                for (var i = 0; i < response.length; ++i) {
+                                    var val = response[i];
+                                    devs[uuid].values[val.name] = val;
+                                }
+                            }
+                            if (!--rem)
+                                done();
+                        });
+                    }
+                    // return this.request({ type: "values", devuuid: response.uuid });
+                }).catch((err) => {
+                    this.log("device error", err);
+                });
+            });
+            this._ws.on("close", () => {
+                this._listener.emit("close");
+                this.log("connection closed, reconnecting");
+                this.reconnect();
+            });
+            this._ws.on("error", (err) => {
+                this.log("connection error", err);
+                if (this._updateConnectionState(err))
+                    this.reconnect();
+                else
+                    process.exit();
+            });
+            this._ws.on("message", (data, flags) => {
+                try {
+                    var obj = JSON.parse(data);
+                } catch (e) {
+                    this.log("invalid json received", data);
                     return;
-                var devs = Object.create(null);
-                var rem = response.length;
-                var done = () => {
-                    this.log("got all devices");
-                    this.updateDevices(devs);
-                };
-                for (var i = 0; i < response.length; ++i) {
-                    let uuid = response[i].uuid;
-                    devs[uuid] = response[i];
-                    devs[uuid].values = Object.create(null);
-                    this.request({ type: "values", devuuid: uuid }).then((response) => {
-                        if (response instanceof Array) {
-                            for (var i = 0; i < response.length; ++i) {
-                                var val = response[i];
-                                devs[uuid].values[val.name] = val;
+                }
+                if (typeof obj === "object") {
+                    // value update
+                    if ("valueUpdated" in obj) {
+                        const updated = obj.valueUpdated;
+                        if (updated.devuuid in this._devices) {
+                            const dev = this._devices[updated.devuuid];
+                            if (updated.valname in dev.values) {
+                                const val = dev.values[updated.valname];
+                                const old = {
+                                    value: val.value,
+                                    raw: val.raw
+                                };
+                                val.value = updated.value;
+                                val.raw = updated.raw;
+                                this._listener.emit("valueUpdated", val, old, dev);
+                            } else {
+                                this.log("value updated but value not known", updated.devuuid, updated.valname);
                             }
                         }
-                        if (!--rem)
-                            done();
-                    });
-                }
-                // return this.request({ type: "values", devuuid: response.uuid });
-            }).catch((err) => {
-                this.log("device error", err);
-            });
-        });
-        this._ws.on("close", () => {
-            this._listener.emit("close");
-        });
-        this._ws.on("message", (data, flags) => {
-            try {
-                var obj = JSON.parse(data);
-            } catch (e) {
-                this.log("invalid json received", data);
-                return;
-            }
-            if (typeof obj === "object") {
-                // value update
-                if ("valueUpdated" in obj) {
-                    const updated = obj.valueUpdated;
-                    if (updated.devuuid in this._devices) {
-                        const dev = this._devices[updated.devuuid];
-                        if (updated.valname in dev.values) {
-                            const val = dev.values[updated.valname];
-                            const old = {
-                                value: val.value,
-                                raw: val.raw
-                            };
-                            val.value = updated.value;
-                            val.raw = updated.raw;
-                            this._listener.emit("valueUpdated", val, old, dev);
-                        } else {
-                            this.log("value updated but value not known", updated.devuuid, updated.valname);
-                        }
+                    } else if ("id" in obj) {
+                        this._listener.emit("response", obj);
+                    } else {
+                        this.log("unrecognized response", obj);
                     }
-                } else if ("id" in obj) {
-                    this._listener.emit("response", obj);
                 } else {
-                    this.log("unrecognized response", obj);
+                    this.log("non-object received", typeof obj);
                 }
-            } else {
-                this.log("non-object received", typeof obj);
-            }
-        });
+            });
+        };
+        if (!this._state.connection) {
+            connect();
+        } else {
+            this.log("reconnecting in", this._state.connection.delay);
+            setTimeout(connect, this._state.connection.delay);
+        }
     },
     updateDevices: function(devs) {
         this._devices = devs;
@@ -190,5 +208,21 @@ HWPlatform.prototype = {
             this.ws.send(JSON.stringify(req));
         });
         return p;
+    },
+
+    _updateConnectionState: function(err) {
+        switch (err.errno) {
+        case "ECONNREFUSED":
+            if (!this._state.connection) {
+                this._state.connection = { delay: 1000 };
+            } else {
+                this._state.connection.delay = Math.min(this._state.connection.delay * 2, 60000);
+            }
+            return true;
+        }
+        return false;
+    },
+    _clearConnectionState: function() {
+        delete this._state.connection;
     }
 };
