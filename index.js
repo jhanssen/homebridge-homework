@@ -81,40 +81,44 @@ HWPlatform.prototype = {
         cb(ret);
     },
 
+    ready: function ready() {
+        this._clearConnectionState();
+        this.log("requesting devices");
+        this.request({ type: "devices" }).then((response) => {
+            if (!(response instanceof Array))
+                return;
+            var devs = Object.create(null);
+            var rem = response.length;
+            var done = () => {
+                this.log("got all devices");
+                this.updateDevices(devs);
+            };
+            for (var i = 0; i < response.length; ++i) {
+                let uuid = response[i].uuid;
+                devs[uuid] = response[i];
+                devs[uuid].values = Object.create(null);
+                this.request({ type: "values", devuuid: uuid }).then((response) => {
+                    if (response instanceof Array) {
+                        for (var i = 0; i < response.length; ++i) {
+                            var val = response[i];
+                            devs[uuid].values[val.name] = val;
+                        }
+                    }
+                    if (!--rem)
+                        done();
+                });
+            }
+            // return this.request({ type: "values", devuuid: response.uuid });
+        }).catch((err) => {
+            this.log("device error", err);
+        });
+    },
+
     reconnect: function reconnect() {
         var connect = () => {
             this._ws = new WebSocket("ws://" + this._host + (this._port ? (":" + this._port) : "") + "/");
             this._ws.on("open", () => {
-                this._clearConnectionState();
-                this.log("requesting devices");
-                this.request({ type: "devices" }).then((response) => {
-                    if (!(response instanceof Array))
-                        return;
-                    var devs = Object.create(null);
-                    var rem = response.length;
-                    var done = () => {
-                        this.log("got all devices");
-                        this.updateDevices(devs);
-                    };
-                    for (var i = 0; i < response.length; ++i) {
-                        let uuid = response[i].uuid;
-                        devs[uuid] = response[i];
-                        devs[uuid].values = Object.create(null);
-                        this.request({ type: "values", devuuid: uuid }).then((response) => {
-                            if (response instanceof Array) {
-                                for (var i = 0; i < response.length; ++i) {
-                                    var val = response[i];
-                                    devs[uuid].values[val.name] = val;
-                                }
-                            }
-                            if (!--rem)
-                                done();
-                        });
-                    }
-                    // return this.request({ type: "values", devuuid: response.uuid });
-                }).catch((err) => {
-                    this.log("device error", err);
-                });
+                this.log("open, waiting for ready");
             });
             this._ws.on("close", () => {
                 this._listener.emit("close");
@@ -137,9 +141,16 @@ HWPlatform.prototype = {
                 }
                 if (typeof obj === "object") {
                     // value update
-                    if ("valueUpdated" in obj) {
+                    if ("ready" in obj) {
+                        if (obj.ready) {
+                            this.ready();
+                        } else {
+                            this.log("not ready?");
+                            process.exit();
+                        }
+                    } else if ("valueUpdated" in obj) {
                         const updated = obj.valueUpdated;
-                        if (updated.devuuid in this._devices) {
+                        if (this._devices && updated.devuuid in this._devices) {
                             const dev = this._devices[updated.devuuid];
                             if (updated.valname in dev.values) {
                                 const val = dev.values[updated.valname];
@@ -153,6 +164,8 @@ HWPlatform.prototype = {
                             } else {
                                 this.log("value updated but value not known", updated.devuuid, updated.valname);
                             }
+                        } else {
+                            this.log("value for unknown device, discarding", updated.devuuid, updated.valname);
                         }
                     } else if ("id" in obj) {
                         this._listener.emit("response", obj);
