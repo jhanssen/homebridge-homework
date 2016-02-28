@@ -1,7 +1,7 @@
 ```
     "platforms": [
         {
-            "platform" : "homeseer-homework",
+            "platform": "homebridge-homework",
             "name" : "Homework",
             "host": "localhost",
             "port": 8093
