@@ -1,8 +1,8 @@
 ```
     "platforms": [
         {
-            "platform": "homebridge-homework",
-            "name" : "Homework",
+            "platform": "homework",
+            "name": "Homework",
             "host": "localhost",
             "port": 8093
         }
